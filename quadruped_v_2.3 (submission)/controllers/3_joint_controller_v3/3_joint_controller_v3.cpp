@@ -1,0 +1,489 @@
+// File:          3_joint_controller_v3.cpp
+// Date:  2021-06-22
+// Description: Quadruped Robot + Waypoint Following System
+// Author: Alexander Li, Anthony Ferrante
+// Modifications:
+
+// You may need to add webots include files such as
+// <webots/DistanceSensor.hpp>, <webots/Motor.hpp>, etc.
+// and/or to add some other includes
+#include <webots/Robot.hpp>
+#include <webots/Motor.hpp>
+#include <webots/GPS.hpp>
+#include <webots/InertialUnit.hpp>
+#include <iostream>
+#include <cmath>
+#include <tuple>
+#define TIME_STEP 8
+
+// All the webots classes are defined in the "webots" namespace
+using namespace webots;
+using namespace std;
+
+// This is the main program of your controller.
+// It creates an instance of your Robot instance, launches its
+// function(s) and destroys it at the end of the execution.
+// Note that only one instance of Robot should be created in
+// a controller program.
+// The arguments of the main function can be specified by the
+// "controllerArgs" field of the Robot node
+
+const double PI = 3.141592653589793238463;
+
+const double FL_x = 0.22, FL_z = 0.15;
+const double FR_x = -0.22, FR_z = 0.15;
+const double BL_x = 0.22, BL_z = -0.20;
+const double BR_x = -0.22, BR_z = -0.20;
+
+const double leg1 = 0.115;
+const double leg2 = 0.115;
+
+double FORWARDS_S = -0.9;
+double FORWARDS_E = 0.9;
+double MIDDLE_S = -0.6;
+double MIDDLE_E = 1.2;
+double BACK_S = 0.1;
+double BACK_E = 1.0;
+double TUCK_S = -1.6;
+double TUCK_E = 2.0;
+
+Robot *robot = new Robot();
+  
+Motor *FL_shoulder_x = robot->getMotor("FL_Shoulder_x");
+Motor *FL_shoulder_y = robot->getMotor("FL_Shoulder_y");
+Motor *FL_elbow = robot->getMotor("FL_elbow");
+Motor *FR_shoulder_x = robot->getMotor("FR_Shoulder_x");
+Motor *FR_shoulder_y = robot->getMotor("FR_Shoulder_y");
+Motor *FR_elbow = robot->getMotor("FR_elbow");
+Motor *BL_shoulder_x = robot->getMotor("BL_Shoulder_x");
+Motor *BL_shoulder_y = robot->getMotor("BL_Shoulder_y");
+Motor *BL_elbow = robot->getMotor("BL_elbow");
+Motor *BR_shoulder_x = robot->getMotor("BR_Shoulder_x");
+Motor *BR_shoulder_y = robot->getMotor("BR_Shoulder_y");
+Motor *BR_elbow = robot->getMotor("BR_elbow");
+
+GPS *gps = robot->getGPS("gps");
+InertialUnit *inertialUnit = robot->getInertialUnit("inertial unit");
+//Angles: measured in direction from x to z axis (North to East). z-axis is east or PI/2
+//This is expected and all geometry calculations will work correctly with x, z axes
+
+//Calculated constants
+const double FL_angle = atan2(FL_z, FL_x); 
+const double FR_angle = atan2(FR_z, FR_x); 
+const double BL_angle = atan2(BL_z, BL_x); 
+const double BR_angle = atan2(BR_z, BR_x);
+
+double h = 0.18;  //Target height of shoulder joint above ground. Lower is faster.
+double step = 0.1;
+double cycleLength = 0.2;  //calculated from 10 steps
+
+
+/*
+========== HELPER METHODS AND FUNCTIONS ==========
+*/
+
+
+//Returns actual time delayed
+void sleep(double seconds){
+  double startTime = robot->getTime();
+  double sleepUntilTime = startTime + seconds;
+  while (robot->step(TIME_STEP) != -1 && robot->getTime() < sleepUntilTime);
+}
+
+
+void restPosition(){
+  FL_shoulder_y->setPosition(0);
+  FL_shoulder_x->setPosition(MIDDLE_S);
+  FL_elbow->setPosition(MIDDLE_E);
+  FR_shoulder_y->setPosition(0);
+  FR_shoulder_x->setPosition(MIDDLE_S);
+  FR_elbow->setPosition(MIDDLE_E);
+  BL_shoulder_y->setPosition(0);
+  BL_shoulder_x->setPosition(MIDDLE_S);
+  BL_elbow->setPosition(MIDDLE_E);
+  BR_shoulder_y->setPosition(0);
+  BR_shoulder_x->setPosition(MIDDLE_S);
+  BR_elbow->setPosition(MIDDLE_E);
+}
+
+
+void walkingStartPosition(){
+  FL_shoulder_y->setPosition(0);
+  FL_shoulder_x->setPosition(MIDDLE_S);
+  FL_elbow->setPosition(MIDDLE_E);
+  FR_shoulder_y->setPosition(0);
+  FR_shoulder_x->setPosition(FORWARDS_S);
+  FR_elbow->setPosition(FORWARDS_E);
+  BL_shoulder_y->setPosition(0);
+  BL_shoulder_x->setPosition(BACK_S);
+  BL_elbow->setPosition(BACK_E);
+  BR_shoulder_y->setPosition(0);
+  BR_shoulder_x->setPosition(MIDDLE_S);
+  BR_elbow->setPosition(MIDDLE_E);
+}
+
+
+void storePosition(){
+  FL_shoulder_y->setPosition(0);
+  FL_shoulder_x->setPosition(0);
+  FL_elbow->setPosition(0);
+  FR_shoulder_y->setPosition(0);
+  FR_shoulder_x->setPosition(0);
+  FR_elbow->setPosition(0);
+  BL_shoulder_y->setPosition(0);
+  BL_shoulder_x->setPosition(0);
+  BL_elbow->setPosition(0);
+  BR_shoulder_y->setPosition(0);
+  BR_shoulder_x->setPosition(0);
+  BR_elbow->setPosition(0);
+}
+
+
+void setShoulderYVelocity(double angularVelocity){
+  FL_shoulder_y->setVelocity(angularVelocity);
+  FR_shoulder_y->setVelocity(angularVelocity);
+  BL_shoulder_y->setVelocity(angularVelocity);
+  BR_shoulder_y->setVelocity(angularVelocity);
+}
+
+
+void setShoulderXVelocity(double angularVelocity){
+  FL_shoulder_x->setVelocity(angularVelocity);
+  FR_shoulder_x->setVelocity(angularVelocity);
+  BL_shoulder_x->setVelocity(angularVelocity);
+  BR_shoulder_x->setVelocity(angularVelocity);
+}
+
+
+void setElbowVelocity(double angularVelocity){
+  FL_elbow->setVelocity(angularVelocity);
+  FR_elbow->setVelocity(angularVelocity);
+  BL_elbow->setVelocity(angularVelocity);
+  BR_elbow->setVelocity(angularVelocity);
+}
+
+
+//Target this foot position for robot translation
+//Outputs an array of 2 values: shoulder x rotation, elbow rotation
+//z is forwards position, regardless of y-rotation. Assuming y=-h
+//Unlike rotationAngles, ensures that the leg is always pointing forwards
+tuple<double, double> walkingAngles(double y, double z){
+  tuple<double, double> motorAngles;
+  double r = sqrt(y*y + z*z);
+  double theta_2 = acos((leg1*leg1+leg2*leg2-r*r)/(2*leg1*leg2));
+  double theta_1 = acos((leg1*leg1+r*r-leg2*leg2)/(2*leg1*r));
+  double theta_r = atan(z/-y);  //This can be negative if foot position is behind shoulder, so z<0
+  
+  motorAngles = make_tuple(-(theta_r + theta_1), PI-theta_2);
+  
+  return motorAngles;
+}
+
+
+//Target this foot position for robot rotation
+//Outputs an array of 3 values: shoulder y rotation, shoulder x rotation, and elbow rotation
+//Limits: y < 0 and r < leg1 + leg2
+//Note: assumed coordinate system has positive angle in XZ plane as CW, starting from +x-axis (left)
+//theta_y is converted to motor system with positive angle in XZ plane as CCW, starting from z-axis (forwards)
+tuple<double, double, double> rotationAngles(double x, double y, double z){
+  tuple<double, double, double> motorAngles;
+  double r = sqrt(x*x + y*y + z*z);
+  
+  double theta_y = -(atan2(z, x)-PI/2);
+  if (theta_y > PI) theta_y -= 2*PI;
+
+  //Calculate the triangle angles
+  double theta_2 = acos((leg1*leg1+leg2*leg2-r*r)/(2*leg1*leg2));
+  double theta_1 = acos((leg1*leg1+r*r-leg2*leg2)/(2*leg1*r));
+  double theta_r = acos(-y/r);
+  
+  motorAngles = make_tuple(theta_y, -(theta_r + theta_1), (PI-theta_2));
+  
+  return motorAngles;
+}
+
+
+//Set the target height of the shoulder joint above the ground
+void setWalkingParameters(double targetHeight, double targetStepLength){
+  h = targetHeight;
+  step = targetStepLength;
+  
+  tuple<double, double> forwardsAngles = walkingAngles(-h, step/2);
+  tuple<double, double> middleAngles = walkingAngles(-h, 0);
+  tuple<double, double> backAngles = walkingAngles(-h, -step/2);
+  
+  FORWARDS_S = get<0>(forwardsAngles);
+  FORWARDS_E = get<1>(forwardsAngles);
+  MIDDLE_S = get<0>(middleAngles);
+  MIDDLE_E = get<1>(middleAngles);
+  BACK_S = get<0>(backAngles);
+  BACK_E = get<1>(backAngles);
+  //Anything for TUCK_S and TUCK_E?
+}
+
+
+/*
+========== CONTROL METHODS ==========
+*/
+
+
+//Turn the robot by theta degrees wrt y-axis (RHR)
+//Positive theta is CCW, negative theta is CW
+//Produces new foot positions relative to center, then rebases the position
+//to each shoulder, calls rotationAngles, then commands the motor movements
+//Limit: theta <= 0.4 for h=-0.18
+void turnStaticRadians(double theta){
+  theta *= -0.8;  //Flip to conform to RHR wrt y-axis, experimentally determined correction factor
+  double FL_theta = FL_angle + theta;
+  double FR_theta = FR_angle + theta;
+  double BL_theta = BL_angle + theta;
+  double BR_theta = BR_angle + theta;
+  
+  //legs should be at constant distance from center
+  double r = sqrt(FL_x*FL_x + FL_z*FL_z);
+  //when rebasing foot position relative to shoulder, subtract 2* the shoulder position
+  tuple<double, double, double> FL_motorAngles = rotationAngles(r*cos(FL_theta)-FL_x, -h, r*sin(FL_theta)-FL_z);
+  tuple<double, double, double> FR_motorAngles = rotationAngles(r*cos(FR_theta)-FR_x, -h, r*sin(FR_theta)-FR_z);
+  tuple<double, double, double> BL_motorAngles = rotationAngles(r*cos(BL_theta)-BL_x, -h, r*sin(BL_theta)-BL_z);
+  tuple<double, double, double> BR_motorAngles = rotationAngles(r*cos(BR_theta)-BR_x, -h, r*sin(BR_theta)-BR_z);
+  
+  if (theta > 0){  //Turning CW
+    BL_shoulder_x->setPosition(TUCK_S);
+    BL_elbow->setPosition(TUCK_E);
+    sleep(0.5);
+    BL_shoulder_y->setPosition(get<0>(BL_motorAngles));
+    sleep(0.5);
+    BL_shoulder_x->setPosition(get<1>(BL_motorAngles));
+    BL_elbow->setPosition(get<2>(BL_motorAngles));
+    sleep(1.5);
+    
+    FL_shoulder_x->setPosition(TUCK_S);
+    FL_elbow->setPosition(TUCK_E);
+    sleep(0.5);
+    FL_shoulder_y->setPosition(get<0>(FL_motorAngles));
+    sleep(0.5);
+    FL_shoulder_x->setPosition(get<1>(FL_motorAngles));
+    FL_elbow->setPosition(get<2>(FL_motorAngles));
+    sleep(1.5);
+    
+    FR_shoulder_x->setPosition(TUCK_S);
+    FR_elbow->setPosition(TUCK_E);
+    sleep(0.5);
+    FR_shoulder_y->setPosition(get<0>(FR_motorAngles));
+    sleep(0.5);
+    FR_shoulder_x->setPosition(get<1>(FR_motorAngles));
+    FR_elbow->setPosition(get<2>(FR_motorAngles));
+    sleep(1.5);
+    
+    BR_shoulder_x->setPosition(TUCK_S);
+    BR_elbow->setPosition(TUCK_E);
+    sleep(0.5);
+    BR_shoulder_y->setPosition(get<0>(BR_motorAngles));
+    sleep(0.5);
+    BR_shoulder_x->setPosition(get<1>(BR_motorAngles));
+    BR_elbow->setPosition(get<2>(BR_motorAngles));
+    sleep(1.5);
+  }
+  else{  //Turning CCW
+    BR_shoulder_x->setPosition(TUCK_S);
+    BR_elbow->setPosition(TUCK_E);
+    sleep(0.5);
+    BR_shoulder_y->setPosition(get<0>(BR_motorAngles));
+    sleep(0.5);
+    BR_shoulder_x->setPosition(get<1>(BR_motorAngles));
+    BR_elbow->setPosition(get<2>(BR_motorAngles));
+    sleep(1.5);
+    
+    FR_shoulder_x->setPosition(TUCK_S);
+    FR_elbow->setPosition(TUCK_E);
+    sleep(0.5);
+    FR_shoulder_y->setPosition(get<0>(FR_motorAngles));
+    sleep(0.5);
+    FR_shoulder_x->setPosition(get<1>(FR_motorAngles));
+    FR_elbow->setPosition(get<2>(FR_motorAngles));
+    sleep(1.5);
+    
+    FL_shoulder_x->setPosition(TUCK_S);
+    FL_elbow->setPosition(TUCK_E);
+    sleep(0.5);
+    FL_shoulder_y->setPosition(get<0>(FL_motorAngles));
+    sleep(0.5);
+    FL_shoulder_x->setPosition(get<1>(FL_motorAngles));
+    FL_elbow->setPosition(get<2>(FL_motorAngles));
+    sleep(1.5);
+    
+    BL_shoulder_x->setPosition(TUCK_S);
+    BL_elbow->setPosition(TUCK_E);
+    sleep(0.5);
+    BL_shoulder_y->setPosition(get<0>(BL_motorAngles));
+    sleep(0.5);
+    BL_shoulder_x->setPosition(get<1>(BL_motorAngles));
+    BL_elbow->setPosition(get<2>(BL_motorAngles));
+    sleep(1.5);
+  }
+  
+  //Reset legs to forwards
+  restPosition();
+  sleep(1);
+}
+
+
+void stepForwards(){
+  //Step 1: tuck and move BL forwards and rotate everything else back 1
+  //Step 1.5: untuck BL and set it on the ground
+  BL_elbow->setPosition(TUCK_E);
+  sleep(0.1);
+  BL_shoulder_x->setPosition(TUCK_S);
+  FL_shoulder_x->setPosition(BACK_S);
+  FL_elbow->setPosition(BACK_E);
+  FR_shoulder_x->setPosition(MIDDLE_S);
+  FR_elbow->setPosition(MIDDLE_E);
+  BR_shoulder_x->setPosition(BACK_S);
+  BR_elbow->setPosition(BACK_E);
+  sleep (0.2);
+  
+  BL_elbow->setPosition(FORWARDS_E);
+  sleep (0.1);
+  BL_shoulder_x->setPosition(FORWARDS_S);
+  sleep(0.2);
+  
+  //Step 2: move FL forwards
+  //Step 2.5: untuck FL and set it on the ground
+  FL_elbow->setPosition(TUCK_E);
+  sleep(0.1);
+  FL_shoulder_x->setPosition(TUCK_S);
+  sleep(0.2);
+  FL_elbow->setPosition(FORWARDS_E);
+  sleep(0.2);
+  FL_shoulder_x->setPosition(FORWARDS_S);
+  sleep(0.2);
+  
+  //Step 3: tuck and move BR forwards and rotate everything else back 1
+  //Step 3.5: untuck BR and set it on the ground
+  BR_elbow->setPosition(TUCK_E);
+  sleep(0.1);
+  BR_shoulder_x->setPosition(TUCK_S);
+  FR_shoulder_x->setPosition(BACK_S);
+  FR_elbow->setPosition(BACK_E);
+  FL_shoulder_x->setPosition(MIDDLE_S);
+  FL_elbow->setPosition(MIDDLE_E);
+  BL_shoulder_x->setPosition(BACK_S);
+  BL_elbow->setPosition(BACK_E);
+  sleep (0.2);
+  
+  BR_elbow->setPosition(FORWARDS_E);
+  sleep(0.1);
+  BR_shoulder_x->setPosition(FORWARDS_S);
+  sleep(0.2);
+  
+  //Step 4: move FR forwards
+  //Step 4.5: untuck FR and set it on the ground
+  FR_elbow->setPosition(TUCK_E);
+  sleep(0.1);
+  FR_shoulder_x->setPosition(TUCK_S);
+  sleep(0.2);
+  FR_elbow->setPosition(FORWARDS_E);
+  sleep(0.2);
+  FR_shoulder_x->setPosition(FORWARDS_S);
+  sleep(0.2);
+}
+
+//Will later put waypoint tracking code into here
+void goToPosition(double x, double z){
+  //Heading of vector f
+  double xPos = gps->getValues()[0];
+  double zPos = gps->getValues()[2];
+  double currentHeading = inertialUnit->getRollPitchYaw()[2];
+  
+  double distance = sqrt(pow(x-xPos, 2) + pow(z-zPos, 2));
+  double targetHeading = atan2(-(z-zPos), (x-xPos));
+  cout << "Target heading: " << targetHeading << "\n";
+  
+  //turnStaticRadians();
+  while (abs(currentHeading - targetHeading) > 0.05){
+    double turnAngle = targetHeading - currentHeading;
+    if (turnAngle > PI) turnAngle -= 2*PI;
+    else if (turnAngle < -PI) turnAngle += 2*PI;
+    if (turnAngle > 0.4) turnAngle = 0.4;  //Maximum turn angle without bugging out
+    else if (turnAngle < -0.4) turnAngle = -0.4;
+    turnStaticRadians(turnAngle);
+    sleep(1);
+    currentHeading = inertialUnit->getRollPitchYaw()[2];
+  }
+  
+  int steps = (int)(distance/cycleLength);
+  walkingStartPosition();
+  sleep(1);
+  for (int i = 0; i < steps; i++){
+    if (robot->step(TIME_STEP) != -1) stepForwards();
+  }
+}
+
+/*
+========== MAIN FUNCTION ==========
+*/
+
+//Robot starts pointed forwards in the positive z direction
+//x-axis is to the left
+//In coordinate system, 0 angle wrt y-axis rotation is in direction of x-axis and positive away from z-axis
+//(consistent with RHR around y-axis)
+int main(int argc, char **argv) {
+  gps->enable(100);
+  inertialUnit->enable(100);
+  setShoulderYVelocity(2);
+  setShoulderXVelocity(2);
+  setElbowVelocity(2);
+  restPosition();
+  sleep(1);
+  
+
+  //DEMONSTRATION 1: manual turning and forwards locomotion
+  //Compare the difference between headings to ensure that the correct angle has been turned
+  /*
+  cout << "HEADING: " << inertialUnit->getRollPitchYaw()[2] << "\n";
+  turnStaticRadians(0.3);  //Turn 0.3 radians CCW
+  cout << "HEADING: " << inertialUnit->getRollPitchYaw()[2] << "\n";
+  turnStaticRadians(-0.3);  //Turn 0.3 radians CW. Should end up back near starting heading.
+  cout << "HEADING: " << inertialUnit->getRollPitchYaw()[2] << "\n";
+  turnStaticRadians(-0.2);  //Turn 0.2 radians CW.
+  cout << "HEADING: " << inertialUnit->getRollPitchYaw()[2] << "\n";
+  walkingStartPosition();
+  sleep(1);
+  
+  //Walk forwards for 1 minute (60 seconds).
+  double stopTime = robot->getTime() + 60;
+  while (robot->step(TIME_STEP) != -1 && robot->getTime() < stopTime) {
+    stepForwards();
+  };
+  
+  double averageSpeed = sqrt(pow(gps->getValues()[0], 2) + pow(gps->getValues()[2], 2))/60;
+  cout << "Average speed: " << averageSpeed << " m/s.\n";
+  //END OF DEMONSTRATION 1
+  */
+  
+  
+  //DEMONSTRATION 2: waypoint finding/automatic navigation
+  //Note: this is probably inaccurate due to inaccuracy in control over walking and rotation
+  /*
+  cout << "Current position: (" << gps->getValues()[0] <<  ", " << gps->getValues()[1] <<  ", " << gps->getValues()[2] <<  ")\n";
+  goToPosition(3, 4);
+  sleep(1);
+  cout << "Current position: (" << gps->getValues()[0] <<  ", " << gps->getValues()[1] <<  ", " << gps->getValues()[2] <<  ")\n";
+  goToPosition(-2, 5);
+  sleep(1);
+  cout << "Current position: (" << gps->getValues()[0] <<  ", " << gps->getValues()[1] <<  ", " << gps->getValues()[2] <<  ")\n";
+  goToPosition(0, 0);
+  sleep(1);
+  cout << "Current position: (" << gps->getValues()[0] <<  ", " << gps->getValues()[1] <<  ", " << gps->getValues()[2] <<  ")\n";
+  
+  while (robot->step(TIME_STEP) != -1) {;
+    break;
+  };
+  */
+  //END OF DEMONSTRATION 2
+
+
+  //Cleanup code
+  delete robot;
+  return 0;
+}

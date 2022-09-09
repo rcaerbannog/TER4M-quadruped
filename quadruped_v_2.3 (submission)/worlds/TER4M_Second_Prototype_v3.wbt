@@ -1,0 +1,289 @@
+#VRML_SIM R2021a utf8
+WorldInfo {
+  basicTimeStep 8
+  coordinateSystem "NUE"
+  contactProperties [
+    ContactProperties {
+      bounce 0.1
+    }
+  ]
+}
+Viewpoint {
+  orientation 0.008459673616887285 0.9999617349213956 -0.002227692817347674 1.5540158777935302
+  position 3.4014884086963635 0.5880042219813759 -0.38720299176430095
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+RectangleArena {
+  floorSize 50 50
+}
+Robot {
+  translation 0 -0.1 0
+  children [
+    InertialUnit {
+      translation 0 0.4 0
+      rotation 0 1 0 -1.570796
+    }
+    GPS {
+      translation 0 0.4 0
+    }
+    DEF Body Transform {
+      translation 0 0.5 0
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0 0 1
+            roughness 1
+            metalness 0
+          }
+          geometry Box {
+            size 0.5 0.2 0.5
+          }
+        }
+      ]
+    }
+    DEF Front_Left_Shoulder Hinge2Joint {
+      jointParameters HingeJointParameters {
+        axis 0 1 0
+        anchor 0.22 0.43 0.15
+      }
+      jointParameters2 JointParameters {
+        axis 1 0 0
+      }
+      device [
+        RotationalMotor {
+          name "FL_Shoulder_y"
+        }
+      ]
+      device2 [
+        RotationalMotor {
+          name "FL_Shoulder_x"
+        }
+      ]
+      endPoint Solid {
+        translation 0.2200206708746159 0.38003436060100165 0.14999686497469294
+        rotation -6.403402721795025e-11 -0.7743887243806474 0.6327101260072528 3.6460069127273273e-06
+        children [
+          DEF upper_leg Shape {
+            appearance PBRAppearance {
+              baseColor 0 1 1
+              roughness 1
+              metalness 0
+            }
+            geometry Box {
+              size 0.06 0.16 0.06
+            }
+          }
+          DEF Front_Left_Elbow HingeJoint {
+            jointParameters HingeJointParameters {
+              anchor 0 -0.065 0
+            }
+            device [
+              RotationalMotor {
+                name "FL_elbow"
+              }
+            ]
+            endPoint Solid {
+              translation 0 -0.09999999999999998 -3.144556490197736e-11
+              rotation 1 0 0 0
+              children [
+                DEF FL Group {
+                  children [
+                    DEF lower_leg Shape {
+                      appearance PBRAppearance {
+                        roughness 1
+                        metalness 0
+                      }
+                      geometry Box {
+                        size 0.03 0.16 0.02
+                      }
+                    }
+                    Transform {
+                      translation 0 -0.05 0
+                      children [
+                        DEF Foot Shape {
+                          appearance PBRAppearance {
+                            roughness 1
+                            metalness 0
+                          }
+                          geometry Sphere {
+                            radius 0.04
+                            subdivision 5
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+              boundingObject USE FL
+              physics Physics {
+              }
+            }
+          }
+        ]
+        boundingObject USE upper_leg
+        physics Physics {
+        }
+      }
+    }
+    DEF Front_Right_Shoulder Hinge2Joint {
+      jointParameters HingeJointParameters {
+        axis 0 1 0
+        anchor -0.22 0.43 0.15
+      }
+      jointParameters2 JointParameters {
+        axis 1 0 0
+      }
+      device [
+        RotationalMotor {
+          name "FR_Shoulder_y"
+        }
+      ]
+      device2 [
+        RotationalMotor {
+          name "FR_Shoulder_x"
+        }
+      ]
+      endPoint Solid {
+        translation -0.22001509687408266 0.3800003425091743 0.15001615650043054
+        rotation -2.2714897283300895e-11 0.6492065095338934 -0.7606121928938683 3.1354819290920334e-06
+        children [
+          USE upper_leg
+          DEF Front_Right_Elbow HingeJoint {
+            jointParameters HingeJointParameters {
+              anchor 0 -0.065 0
+            }
+            device [
+              RotationalMotor {
+                name "FR_elbow"
+              }
+            ]
+            endPoint Solid {
+              translation 0 -0.1 0
+              rotation 1 0 0 0
+              children [
+                USE FL
+              ]
+              boundingObject USE FL
+              physics Physics {
+              }
+            }
+          }
+        ]
+        name "solid(1)"
+        boundingObject USE upper_leg
+        physics Physics {
+        }
+      }
+    }
+    DEF Back_Left_Shoulder Hinge2Joint {
+      jointParameters HingeJointParameters {
+        axis 0 1 0
+        anchor 0.22 0.43 -0.2
+      }
+      jointParameters2 JointParameters {
+        axis 1 0 0
+      }
+      device [
+        RotationalMotor {
+          name "BL_Shoulder_y"
+        }
+      ]
+      device2 [
+        RotationalMotor {
+          name "BL_Shoulder_x"
+        }
+      ]
+      endPoint Solid {
+        translation 0.2199775431223885 0.3799934166597246 -0.19998746004385168
+        rotation -2.930214556455095e-11 0.964196322224932 -0.26518946473778865 3.5150320050394452e-06
+        children [
+          USE upper_leg
+          DEF Back_Left_Elbow HingeJoint {
+            jointParameters HingeJointParameters {
+              anchor 0 -0.065 0
+            }
+            device [
+              RotationalMotor {
+                name "BL_elbow"
+              }
+            ]
+            endPoint Solid {
+              translation 0 -0.10000000000000003 -2.631946986741962e-10
+              rotation 1 0 0 0
+              children [
+                USE FL
+              ]
+              boundingObject USE FL
+              physics Physics {
+              }
+            }
+          }
+        ]
+        name "solid(2)"
+        boundingObject USE upper_leg
+        physics Physics {
+        }
+      }
+    }
+    DEF Back_Right_Shoulder Hinge2Joint {
+      jointParameters HingeJointParameters {
+        axis 0 1 0
+        anchor -0.22 0.43 -0.2
+      }
+      jointParameters2 JointParameters {
+        axis 1 0 0
+      }
+      device [
+        RotationalMotor {
+          name "BR_Shoulder_y"
+        }
+      ]
+      device2 [
+        RotationalMotor {
+          name "BR_Shoulder_x"
+        }
+      ]
+      endPoint Solid {
+        translation -0.21998527031874468 0.38000995078578975 -0.20001875430253355
+        rotation -4.104892514680068e-10 0.6710644166610786 0.7413990482131241 1.3924415571956518e-06
+        children [
+          USE upper_leg
+          DEF Back_Right_Elbow HingeJoint {
+            jointParameters HingeJointParameters {
+              anchor 0 -0.065 0
+            }
+            device [
+              RotationalMotor {
+                name "BR_elbow"
+              }
+            ]
+            endPoint Solid {
+              translation 0 -0.10000000000000003 -2.2730292995043477e-10
+              rotation 1 0 0 0
+              children [
+                USE FL
+              ]
+              boundingObject USE FL
+              physics Physics {
+              }
+            }
+          }
+        ]
+        name "solid(3)"
+        boundingObject USE upper_leg
+        physics Physics {
+        }
+      }
+    }
+  ]
+  boundingObject USE Body
+  physics Physics {
+    density -1
+    mass 4
+  }
+  controller "3_joint_controller_v3"
+}
